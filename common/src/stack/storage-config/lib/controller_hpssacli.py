@@ -6,24 +6,23 @@ import subprocess
 class CLI:
 	debug = 0
 
-	def run(self, args):
+	def run(self, args, check=False):
 		if not os.path.exists('/opt/stack/sbin/hpssacli'):
 			return []
 
 		cmd = [ '/opt/stack/sbin/hpssacli', 'ctrl' ]
 		cmd.extend(args)
 
-		file = open('/tmp/hpssacli.log', 'a')
-		file.write('cmd: %s\n' % ' '.join(cmd))
+		with open('/tmp/hpssacli.log', 'a') as fi:
+			fi.write('cmd: %s\n' % ' '.join(cmd))
 
-		p = subprocess.run(cmd, stdin=subprocess.PIPE)
-		result = p.stdout.decode()
+			p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8', check=check)
+			result = p.stdout
 
-		file.write('result:\n')
-		for line in result:
-			file.write('%s' % line)
-		file.write('\n\n')
-		file.close()
+			fi.write('result:\n')
+			for line in result:
+				fi.write('%s' % line)
+			fi.write('\n\n')
 
 		return result
 
@@ -165,8 +164,7 @@ class CLI:
 		#
 		return
 
-	def doRaid(self, raidlevel, adapter, enclosure, slots, hotspares,
-			flags):
+	def doRaid(self, raidlevel, adapter, enclosure, slots, hotspares, flags, check=False):
 
 		drives = []
 		for slot in slots:
@@ -201,7 +199,7 @@ class CLI:
 			f = flags.split()
 			cmd.extend(f)
 
-		result = self.run(cmd)
+		result = self.run(cmd, check=check)
 
 		if hotspares:
 			#
@@ -227,9 +225,9 @@ class CLI:
 
 				cmd = [ 'slot=%d' % adapter, 'array', arrayid,
 					'add', 'spares=%s' % ','.join(spares) ]
-				result = self.run(cmd)
+				result = self.run(cmd, check=check)
 
-	def doGlobalHotSpare(self, adapter, enclosure, hotspares, options):
+	def doGlobalHotSpare(self, adapter, enclosure, hotspares, options, check=True):
 		spares = []
 		for slot in hotspares:
 			enclosure = self.getEnclosure(adapter, slot)
@@ -241,5 +239,11 @@ class CLI:
 		if options:
 			f = options.split()
 			cmd.extend(f)
-		result = self.run(cmd)
+		result = self.run(cmd, check=check)
 
+if __name__ == '__main__':
+	s = CLI()
+	a = s.getAdapter()
+	if a is not None:
+		print(s.getEnclosure(a))
+		print(s.getSlots(a))
