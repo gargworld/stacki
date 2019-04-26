@@ -1,11 +1,11 @@
-# @copyright@
-# @copyright@
 #!/opt/stack/bin/python3
+
 from collections import deque
+from functools import partial
 import os
 import re
+import socket
 import subprocess
-import threading
 import time
 
 #
@@ -32,7 +32,7 @@ def outputState(state, flag, msg=''):
 			'{"state":"%s"}' % flag.lower()]
 		subprocess.run(cmd, env=pyenv)
 
-class YastLogReader(threading.Thread):
+class YastLogReader:
 	"""
 	Read y2log to see if installation has stalled
 	"""
@@ -41,11 +41,8 @@ class YastLogReader(threading.Thread):
 
 	def run(self):
 		# Wait until log file is available
-		while True:
-			if not os.path.isfile(YastLogReader.YAST_LOG):
-				time.sleep(YastLogReader.SLEEP_TIME)
-			else:
-				break
+		while not os.path.isfile(YastLogReader.YAST_LOG):
+			time.sleep(YastLogReader.SLEEP_TIME)
 
 		# Create 3 element queue to store last 3 lines from log file
 		q = deque( maxlen=3 )
@@ -80,7 +77,7 @@ class YastLogReader(threading.Thread):
 				else:
 					q.append(line)
 
-class CheckWait(threading.Thread):
+class CheckWait:
 	"""
 	Check for WAIT status through the install
 	"""
@@ -99,7 +96,7 @@ class BackendTest:
 	"""
 	PARTITION_XML = '/tmp/partition.xml'
 	LUDICROUS_LOG = '/var/log/ludicrous-client-debug.log'
-	NUM_RETRIES   = 10
+	NUM_RETRIES   = 100
 	SLEEP_TIME    = 10
 
 	def isEmptyFile(self, filepath):
@@ -164,23 +161,48 @@ class BackendTest:
 			msg = 'Backend - %s - Not Present' % BackendTest.PARTITION_XML
 			outputState("Partition_XML_Present", True, msg)
 
+	def checkSSHOpen(self):
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		numRetries = 100
+		count = 1
+		result = -1
+		msg = ''
+
+		while count <= numRetries:
+			result = sock.connect_ex(('127.0.0.1', 2200))
+			if result == 0:
+				outputState("SSH_Open", False, msg)
+				break
+
+			count = count + 1
+			time.sleep(1)
+
+		if result == -1:
+			msg = 'Error - SSH Port 2200 is not yet open'
+			outputState("SSH_Open", True, msg)
+
+		sock.close()
+
 	def run(self):
-		test_list = [self.checkAutoyastFiles, self.checkLudicrousStarted,  \
+		test_list = [self.checkSSHOpen, self.checkAutoyastFiles, self.checkLudicrousStarted,  \
 				self.checkPartition, self.checkPkgInstall]
 
+		newpid1 = os.fork()
+
 		# Check for WAIT status through the install
-		chkWait = CheckWait()
-		chkWait.setDaemon(True)
-		chkWait.start()
+		if newpid1 == 0:
+			chkWait = CheckWait()
+			chkWait.run()
 
-		yastLogReader = YastLogReader()
-		yastLogReader.setDaemon(True)
-		yastLogReader.start()
+		newpid2 = os.fork()
+		if newpid2 == 0:
+			yastLogReader = YastLogReader()
+			yastLogReader.run()
 
-		for test in test_list:
-			test()
-
-		chkWait.join()
+		newpid3 = os.fork()
+		if newpid3 == 0:
+			for test in test_list:
+				test()
 
 if __name__ == "__main__":
 	b = BackendTest()

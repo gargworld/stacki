@@ -67,6 +67,8 @@ udevadm settle --timeout=60
 # Configure the bootloader
 /opt/stack/bin/output-bootloader.py > /tmp/bootloader.xml
 
+/opt/stack/bin/BackendTest.py
+
 # give ourselves the ability to hold the installation prior to the start of yast
 #
 grep stack-debug /proc/cmdline 2>&1 > /dev/null
@@ -92,4 +94,3 @@ fi
 # execute code that runs just prior to the autoyast gui 
 #
 PYTHONPATH=/tmp /opt/stack/bin/python3 -c "exec(\"from stack_site import *\\ntry: \\n patch() \\nexcept: \\n pass\" )"
-

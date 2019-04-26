@@ -7,7 +7,6 @@ from datetime import datetime
 import copy
 import json
 import logging
-import paramiko
 import re
 import socket
 import shlex
@@ -260,82 +259,8 @@ class CheckTimeouts(threading.Thread):
 					self.log.debug(sm)
 					self.queue.put(sm)
 
-class BackendExec(threading.Thread):
-	"""
-	Runs scripts / tests on a Backend via SSH and appends
-	State messages to the queue about the installation
-	progress.
-	"""
-
-	SSH_PORT    = 2200
-	MAX_RETRIES = 50
-
-	def __init__(self, ip, queue, scriptPath, ignoreError=True):
-		super(self.__class__, self).__init__()
-		self.ip = ip
-		self.queue = queue
-		self.ignoreError = ignoreError
-		self.scriptPath = scriptPath
-		parentLog = logging.getLogger("checklist")
-		self.log = parentLog.getChild("BackendExec-%s" % ip)
-
-		# Flag that checks if termination is needed
-		self.shutdownFlag = threading.Event()
-
-	def connect(self, client):
-		num_tries = 0
-
-		# Retry connecting to backend till it succeeds
-		while num_tries <= BackendExec.MAX_RETRIES and \
-			not self.shutdownFlag.is_set():
-			try:
-				num_tries = num_tries + 1
-				client.connect(self.ip, port=BackendExec.SSH_PORT)
-				return True
-			except (paramiko.BadHostKeyException, paramiko.AuthenticationException,
-				paramiko.SSHException, socket.error) as e:
-				time.sleep(2)
-				pass
-		return False
-
-	def run(self):
-		client = paramiko.SSHClient()
-		client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-		self.log.debug('Initialized Backend Exec...')
-
-		if not self.connect(client):
-			client.close()
-
-			if not self.shutdownFlag.is_set() and self.ignoreError:
-				msg = 'Error - Unable to connect to %s via port %d' % \
-					(self.ip, BackendExec.SSH_PORT)
-				self.log.warn(msg)
-				sm = StateMessage(self.ip, State.SSH_Open, True, \
-					time.time(), msg)
-				self.queue.put(sm)
-			return
-
-		msg = 'Connected to backend %s via port 2200' % self.ip
-		self.log.debug(msg)
-		sm = StateMessage(self.ip, State.SSH_Open, False, \
-			time.time(), msg)
-		self.queue.put(sm)
-
-		# Run tests if Backend test script is provided
-		if self.scriptPath:
-			sftp = client.open_sftp()
-			sftp.put(self.scriptPath, '/tmp/BackendTest.py')
-			sftp.close()
-
-			stdin, stdout, stderr = client.exec_command(
-				'export LD_LIBRARY_PATH=/opt/stack/lib;' 	\
-				'unset PYTHONPATH;' 				\
-				'/opt/stack/bin/python3 /tmp/BackendTest.py')
-
-			for line in stderr:
-				self.log.error(line.strip())
-
-		client.close()
+			# Check for timeouts every 15 seconds
+			time.sleep(15)
 
 class MQProcessor(stack.mq.processors.ProcessorBase):
 	"""

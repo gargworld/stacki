@@ -10,7 +10,7 @@ import queue
 import signal
 import socket
 from stack.checklist import Backend, State, StateMessage, StateSequence
-from stack.checklist.threads import MQProcessor, LogParser, BackendExec, CheckTimeouts
+from stack.checklist.threads import MQProcessor, LogParser, CheckTimeouts
 import stack.api
 import sys
 import threading
@@ -280,14 +280,14 @@ class Checklist(threading.Thread):
 				if currState:
 					nextState = StateSequence.nextExpectedState(currState.state, os, osver)
 				#
-				# If State same as last state ignore this msg
+				# If State same as previously seen message ignore this
 				# OR
 				# If this is a timeout message but it was successful
 				# earlier then drop the timeout message
 				#
-				if (len(stateList) > 0 and sm == stateList[-1]) or \
+				if (backend.hasStateMessage(sm) or \
 					(Checklist.TIMEOUT_STR in sm.msg and \
-					backend.isKnownState(sm.state)):
+					backend.isKnownState(sm.state))):
 					self.log.debug('Ignoring timeout message %s' % sm)
 					continue
 				#
@@ -302,25 +302,18 @@ class Checklist(threading.Thread):
 
 				stateList.append(sm)
 
-			#
-			# Lazy init BackendExec thread only after
-			# Profile_XML_Sent StateMessage is received.
-			#
-			if sm.state == State.Profile_XML_Sent and not sm.isError and self.frontendOS == 'sles':
-				# If BackendExec already exists shut it down
-				if sm.ipAddr in self.ipThreadMap:
-					t = self.ipThreadMap[sm.ipAddr]
-					if t.isAlive():
-						t.shutdownFlag.set()
-
-				backendThread = BackendExec(sm.ipAddr, self.queue,self.backendScript)
-				self.ipThreadMap[sm.ipAddr] = backendThread
-				backendThread.setDaemon(True)
-				backendThread.start()
-
 			with self.lock:
 				# Sort messages based on  time
-				stateList.sort(key=lambda x: x.time)
+				expectedStateList = StateSequence.getStateListByOS(os, osver)
+
+				if expectedStateList:
+					installWaitIdx    = backend.findStateMsgIndex(State.Install_Wait)
+					installStalledIdx = backend.findStateMsgIndex(State.Installation_Stalled)
+
+					stateList.sort(key=lambda x: installWaitIdx \
+						if x.state == State.Install_Wait \
+						else (installStalledIdx if x.state == State.Installation_Stalled \
+						else expectedStateList.index(x.state)))
 
 				# Add current state to Redis
 				currState = backend.lastSuccessfulState()
@@ -395,8 +388,6 @@ class Checklist(threading.Thread):
 		self.dhcpLog.start()
 
 		self.frontendOS = stack.api.Call('list.host.attr', ['localhost', 'attr=os'])[0]['value']
-		self.ipThreadMap = {}
-		self.backendScript = None
 
 		if self.frontendOS == 'redhat':
 			self.run_redhat()
@@ -426,13 +417,6 @@ class Checklist(threading.Thread):
 			self.queue)
 		self.accessLog = LogParser(r'/var/log/apache2/access_log', \
 			self.queue)
-		self.backendScript = '/opt/stack/share/BackendTest.py'
-
-		for ip, b in self.ipBackendMap.items():
-			backendThread = BackendExec(ip, self.queue, self.backendScript, False)
-			backendThread.setDaemon(True)
-			backendThread.start()
-			self.ipThreadMap[ip] = backendThread
 
 def signalHandler(t, sig, frame):
 	# Send Signal to threads
@@ -440,11 +424,6 @@ def signalHandler(t, sig, frame):
 	t.apacheLog.shutdownFlag.set()
 	t.accessLog.shutdownFlag.set()
 	t.timeoutThread.shutdownFlag.set()
-
-	for ip, th in t.ipThreadMap.items():
-		if th.is_alive():
-			th.shutdownFlag.set()
-
 	t.log.info('Exiting....')
 	t.shutdownFlag.set()
 	sys.exit(0)
