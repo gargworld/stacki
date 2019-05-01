@@ -35,5 +35,9 @@ ln -s /opt/stack/lib/python3.7/site-packages/mod_wsgi/server/mod_wsgi-py37.cpyth
 cp /etc/apache2/stacki-conf.d/ws.conf /etc/httpd/conf.d
 
 /opt/stack/share/stack/bin/ws_setup.sh
+
+<!-- enable commands because they require 'sudo' -->
+/opt/stack/bin/stack add api sudo command command="report system"
+
 </stack:script>
-</stack:stack> 
+</stack:stack>

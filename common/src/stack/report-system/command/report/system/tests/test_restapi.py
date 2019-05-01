@@ -3,7 +3,7 @@ import json
 
 def test_restapi_list_host():
 	proc = subprocess.Popen(
-		'wsclient list host localhost'.split(),
+		'/opt/stack/bin/wsclient list host localhost'.split(),
 		stdout=subprocess.PIPE,
 		stderr=subprocess.PIPE,
 		encoding='utf-8',
