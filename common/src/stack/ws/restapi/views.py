@@ -181,7 +181,7 @@ class StackWS(View):
 				c.extend(cmd_module.split('.'))
 				c.extend(cmd_arg_list)
 				log.info(f'{c}')
-				p = subprocess.Popen(c, 
+				p = subprocess.Popen(c,
 						     stdout=subprocess.PIPE,
 						     stderr=subprocess.PIPE,
 						     encoding='utf-8')
@@ -218,10 +218,16 @@ class StackWS(View):
 						    content_type='application/json',
 						    status=status_code)
 			except CommandError as e:
-				return HttpResponse(json.dumps({'API Error': '%s' % e}),
+				# Get output from command
+				text = command.getText()
+
+				if not text:
+					text = {}
+
+				return HttpResponse(json.dumps({'API Error': '%s' % e, 'Output': text}),
 						    content_type='application/json',
 						    status=500)
-			
+
 			# Any other type of error, simply forward it
 			# to the client
 			except:
@@ -233,7 +239,7 @@ class StackWS(View):
 
 			# Get output from command
 			text = command.getText()
-			
+
 			if not text:
 				text = {}
 
