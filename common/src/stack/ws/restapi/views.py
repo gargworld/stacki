@@ -101,7 +101,7 @@ class StackWS(View):
 		# Check if user has permission to run
 		# command module
 		if not request.user.has_perm(mod_name):
-			return HttpResponseForbidden('Unauthorized Command: User %s is not allowed to run %s' % 
+			return HttpResponseForbidden('Unauthorized Command: User %s is not allowed to run %s' %
 						     (request.user.username, mod_name),
 						     content_type="text/plain")
 
@@ -185,17 +185,24 @@ class StackWS(View):
 						     stdout=subprocess.PIPE,
 						     stderr=subprocess.PIPE,
 						     encoding='utf-8')
-				o, e = p.communicate()
+				output, error = p.communicate()
 				rc = p.wait()
 				if rc:
-					j = {"API Error": e, "Output": o}
+					j = {"API Error": error, "Output": output}
 					return HttpResponse(str(json.dumps(j)),
 							    content_type="application/json",
 							    status=500)
 				else:
-					if not o:
-						o = {}
-					return HttpResponse(str(json.dumps(o)),
+					if not output:
+						output = {}
+
+					# Check to see if text is json
+					try:
+						j = json.loads(output)
+					except:
+						j = {"Output": output}
+
+					return HttpResponse(str(json.dumps(j)),
 							    content_type="application/json",
 							    status=200)
 		# If it's not the sync command, run the
