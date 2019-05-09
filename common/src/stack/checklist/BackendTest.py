@@ -1,7 +1,6 @@
 #!/opt/stack/bin/python3
 
 from collections import deque
-from functools import partial
 import os
 import re
 import socket

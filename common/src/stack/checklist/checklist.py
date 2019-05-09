@@ -310,6 +310,10 @@ class Checklist(threading.Thread):
 					installWaitIdx    = backend.findStateMsgIndex(State.Install_Wait)
 					installStalledIdx = backend.findStateMsgIndex(State.Installation_Stalled)
 
+					#
+					# Sort StateMessages based on expected order in State Sequence list
+					# except for Install_Wait, Installation_Stalled messages
+					#
 					stateList.sort(key=lambda x: installWaitIdx \
 						if x.state == State.Install_Wait \
 						else (installStalledIdx if x.state == State.Installation_Stalled \
