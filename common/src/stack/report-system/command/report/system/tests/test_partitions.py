@@ -5,15 +5,14 @@ import testinfra
 import paramiko
 from collections import namedtuple, defaultdict
 from stack import api
-from stack.commands.report.system.fixtures.disk_partition_check import get_partitions, get_part_label
-from stack.commands.report.system.fixtures.disk_partition_check import get_part_size, get_part_fs
+from stack.commands.report.system.tests.stack_test_util import get_partitions, get_part_label, get_part_size, get_part_fs
 
 testinfra_hosts = list(set([host['host'] for host in api.Call('list host partition')]))
 class TestStoragePartition:
 
 	""" Test if the way stacki configured the disks is still how they are partitioned """
 
-	def test_storage_partition(self, host, get_partitions, get_part_label, get_part_size, get_part_fs):
+	def test_storage_partition(self, host):
 
 		# Get current hostname and test if we can ssh into the host
 		# Otherwise fail the test
@@ -44,6 +43,9 @@ class TestStoragePartition:
 		# Get a list of the partitions that are actually on the disk
 		host_partitions = get_partitions(host)
 
+		if not host_partitions:
+			pytest.fail(f'No partitions found on host {hostname}')
+
 		# Go through the stacki storage config and see
 		# if it matches what's actually on the disk/disks
 		for partition in storage_config:
@@ -51,6 +53,7 @@ class TestStoragePartition:
 			disk = partition['device']
 			disk_num = str(partition['partid'])
 			partition_name = disk + disk_num
+			partition_size = get_part_size(host, partition_name)
 			conf_mntpt = partition['mountpoint']
 			part_label = ''
 
@@ -95,33 +98,35 @@ class TestStoragePartition:
 				config_label = partition['options'].split('label=')[1]
 				curr_label = get_part_label(host, partition_name)
 
-				if config_label != curr_label:
+				if not curr_label:
+					errors.append(f'/dev/{partition_name} configured with label {config_label} but no label found')
+
+				elif config_label != curr_label:
 					errors.append(f'/dev/{partition_name} configured with label {config_label} but found with {curr_label}')
 
 			# Check partition size within 100MB due to lsblk bytes conversion
 			# If a partition size is 0, we assume that means it fills the rest of the disk
 			# So check that as well
-			if not math.isclose(int(partition['size']), get_part_size(host, partition_name), abs_tol=100):
+			if not math.isclose(int(partition['size']), partition_size, abs_tol=100):
 
 				# Initial check will not match if partition size as 0, as it fills the rest
 				# of the disk
 				if int(partition['size']) == 0:
-					fill_size = get_part_size(host, partition_name)
 					disk_size = get_part_size(host, disk)
 					rest_of_disk = 0
 
 					# Find the size of the disk for all the other partitions
 					for partition in storage_config:
-						partition_nm = partition['device'] + str(partition['partid'])
+						curr_partition = partition['device'] + str(partition['partid'])
 
 						# Don't include the current partition
-						if partition_nm != partition_name:
-							part_size = get_part_size(host, partition_nm)
-							if part_size != -1:
+						if curr_partition != partition_name:
+							part_size = get_part_size(host, curr_partition)
+							if part_size:
 								rest_of_disk += part_size
 
 					# Check if the disk size matches all the partitions added up
-					if not math.isclose(fill_size+rest_of_disk, disk_size, abs_tol=100):
+					if not math.isclose(partition_size+rest_of_disk, disk_size, abs_tol=100):
 						errors.append(f'/dev/{partition_name} size different from configuration')
 				else:
 					errors.append(f'/dev/{partition_name} size different from configuration')
